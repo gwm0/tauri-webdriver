@@ -752,13 +752,38 @@ async fn element_selected<R: Runtime>(
 
 // --- Script handlers ---
 
+/// JavaScript snippet that resolves `__wd_resolve` marker objects in `__args`
+/// back to real DOM nodes. The CLI replaces W3C element references with
+/// `{"__wd_resolve": {"selector": "...", "index": N, "using": "..."}}` markers;
+/// this resolver walks the args array and replaces each marker with the actual
+/// DOM element found via `querySelectorAll` or XPath `evaluate`.
+const RESOLVE_ARGS_JS: &str = "\
+    function __wdResolve(v){\
+        if(Array.isArray(v)){for(var i=0;i<v.length;i++){v[i]=__wdResolve(v[i])}return v}\
+        if(v&&typeof v==='object'&&v.__wd_resolve){\
+            var r=v.__wd_resolve;\
+            if(r.using==='xpath'){\
+                var xr=document.evaluate(r.selector,document,null,\
+                    XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,null);\
+                return xr.snapshotItem(r.index)\
+            }\
+            return document.querySelectorAll(r.selector)[r.index]\
+        }\
+        if(v&&typeof v==='object'&&!Array.isArray(v)){\
+            for(var k in v){if(v.hasOwnProperty(k)){v[k]=__wdResolve(v[k])}}\
+        }\
+        return v\
+    }";
+
 async fn script_execute<R: Runtime>(
     AxumState(state): AxumState<SharedState<R>>,
     Json(body): Json<ScriptReq>,
 ) -> ApiResult {
     let args_json = serde_json::to_string(&body.args).unwrap();
     let script = format!(
-        "var __args={args_json};return (function(){{{}}}).apply(null,__args)",
+        "{RESOLVE_ARGS_JS}\
+         var __args=__wdResolve({args_json});\
+         return (function(){{{}}}).apply(null,__args)",
         body.script
     );
     let result = eval_js(&state, &script).await?;
@@ -790,7 +815,8 @@ async fn script_execute_async<R: Runtime>(
 
     let args_json = serde_json::to_string(&body.args).unwrap();
     let script = format!(
-        "(function(){{var __args={args_json};\
+        "(function(){{{RESOLVE_ARGS_JS}\
+         var __args=__wdResolve({args_json});\
          var __done=function(r){{window.__WEBDRIVER__.resolve(\"{id}\",r)}};\
          __args.push(__done);\
          try{{(function(){{{user_script}}}).apply(null,__args)}}\

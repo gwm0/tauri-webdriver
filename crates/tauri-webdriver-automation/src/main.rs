@@ -963,6 +963,38 @@ async fn is_element_displayed(
 
 // --- Script handlers ---
 
+/// Recursively walk a JSON value and replace W3C element references
+/// (`{"element-6066-...": "<uuid>"}`) with `{"__wd_resolve": {"selector", "index", "using"}}`
+/// markers so the plugin can resolve them to real DOM nodes.
+fn resolve_script_args(value: &mut Value, session: &Session) {
+    match value {
+        Value::Array(arr) => {
+            for item in arr.iter_mut() {
+                resolve_script_args(item, session);
+            }
+        }
+        Value::Object(map) => {
+            if let Some(eid) = map.get(W3C_ELEMENT_KEY).and_then(|v| v.as_str()) {
+                if let Some(elem_ref) = session.elements.get(eid) {
+                    let marker = json!({
+                        "__wd_resolve": {
+                            "selector": elem_ref.selector,
+                            "index": elem_ref.index,
+                            "using": elem_ref.using,
+                        }
+                    });
+                    *value = marker;
+                    return;
+                }
+            }
+            for val in map.values_mut() {
+                resolve_script_args(val, session);
+            }
+        }
+        _ => {}
+    }
+}
+
 async fn execute_sync(
     AxumState(state): AxumState<SharedState>,
     Path(sid): Path<String>,
@@ -971,7 +1003,8 @@ async fn execute_sync(
     let guard = state.sessions.lock().await;
     let session = get_session(&guard, &sid)?;
     let script = body.get("script").and_then(|v| v.as_str()).unwrap_or("");
-    let args = body.get("args").cloned().unwrap_or(json!([]));
+    let mut args = body.get("args").cloned().unwrap_or(json!([]));
+    resolve_script_args(&mut args, session);
     let result = plugin_post(
         session,
         "/script/execute",
@@ -992,7 +1025,8 @@ async fn execute_async(
     let guard = state.sessions.lock().await;
     let session = get_session(&guard, &sid)?;
     let script = body.get("script").and_then(|v| v.as_str()).unwrap_or("");
-    let args = body.get("args").cloned().unwrap_or(json!([]));
+    let mut args = body.get("args").cloned().unwrap_or(json!([]));
+    resolve_script_args(&mut args, session);
     let result = plugin_post(
         session,
         "/script/execute-async",

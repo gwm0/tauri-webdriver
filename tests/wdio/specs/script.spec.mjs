@@ -22,4 +22,27 @@ describe('Script Execution', () => {
         });
         expect(result).toBe(42);
     });
+
+    it('should resolve W3C element references passed as script args', async () => {
+        // This is the core regression test: WebdriverIO passes element objects
+        // to browser.execute() which must be resolved to real DOM nodes.
+        const heading = await $('h1');
+        const text = await browser.execute((el) => el.textContent, heading);
+        expect(text).toBe('WebDriver Test App');
+    });
+
+    it('should resolve element refs in async scripts', async () => {
+        const heading = await $('h1');
+        const text = await browser.executeAsync((el, done) => {
+            done(el.textContent);
+        }, heading);
+        expect(text).toBe('WebDriver Test App');
+    });
+
+    it('should support isDisplayed on elements', async () => {
+        // isDisplayed() internally calls browser.execute(isElementDisplayed, this)
+        // which was the original failing case.
+        const heading = await $('h1');
+        expect(await heading.isDisplayed()).toBe(true);
+    });
 });
