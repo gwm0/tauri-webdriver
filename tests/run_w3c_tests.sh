@@ -1,8 +1,10 @@
 #!/bin/bash
 set -e
 
-CLI_BIN="/Users/danielraffel/Code/tauri-webdriver/target/debug/tauri-wd"
-APP_BIN="/Users/danielraffel/Code/tauri-webdriver/tests/test-app/src-tauri/target/debug/webdriver-test-app"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CLI_BIN="${CLI_BIN:-$ROOT/target/debug/tauri-wd}"
+APP_BIN="${APP_BIN:-$ROOT/tests/test-app/src-tauri/target/debug/webdriver-test-app}"
 PORT=4444
 BASE="http://127.0.0.1:$PORT"
 
@@ -192,6 +194,14 @@ run_test "Find element (#dropdown)" "POST" "/session/$SESSION_ID/element" '{"usi
 extract_element_id DROPDOWN_EID
 echo "      Element ID: $DROPDOWN_EID"
 
+run_test "Find element (#pointer-trigger)" "POST" "/session/$SESSION_ID/element" '{"using":"css selector","value":"#pointer-trigger"}' '"element-6066'
+extract_element_id POINTER_TRIGGER_EID
+echo "      Element ID: $POINTER_TRIGGER_EID"
+
+run_test "Find element (#pointer-status)" "POST" "/session/$SESSION_ID/element" '{"using":"css selector","value":"#pointer-status"}' '"element-6066'
+extract_element_id POINTER_STATUS_EID
+echo "      Element ID: $POINTER_STATUS_EID"
+
 run_test "Find elements (option)" "POST" "/session/$SESSION_ID/elements" '{"using":"css selector","value":"option"}' '"element-6066'
 
 run_test "Find element not found" "POST" "/session/$SESSION_ID/element" '{"using":"css selector","value":"#nonexistent"}' '"no such element"'
@@ -238,6 +248,12 @@ if [ -n "$BTN_EID" ] && [ -n "$CTR_EID" ]; then
   run_test "Click increment (3)" "POST" "/session/$SESSION_ID/element/$BTN_EID/click" "" 'null'
   sleep 0.3
   run_test "Counter is Count: 3" "GET" "/session/$SESSION_ID/element/$CTR_EID/text" "" '"Count: 3"'
+fi
+
+if [ -n "$POINTER_TRIGGER_EID" ] && [ -n "$POINTER_STATUS_EID" ]; then
+  run_test "Click pointer trigger" "POST" "/session/$SESSION_ID/element/$POINTER_TRIGGER_EID/click" "" 'null'
+  sleep 0.3
+  run_test "Pointer status is opened" "GET" "/session/$SESSION_ID/element/$POINTER_STATUS_EID/text" "" '"Pointer: opened"'
 fi
 
 if [ -n "$INPUT_EID" ]; then
@@ -385,6 +401,13 @@ run_test "Key actions (type 'x')" "POST" "/session/$SESSION_ID/actions" '{"actio
 
 # Pointer action: click at position
 run_test "Pointer actions (click)" "POST" "/session/$SESSION_ID/actions" '{"actions":[{"type":"pointer","id":"m1","parameters":{"pointerType":"mouse"},"actions":[{"type":"pointerMove","x":100,"y":100,"origin":"viewport","duration":0},{"type":"pointerDown","button":0},{"type":"pointerUp","button":0}]}]}' 'null'
+
+if [ -n "$POINTER_TRIGGER_EID" ] && [ -n "$POINTER_STATUS_EID" ]; then
+  run_test "Reset pointer status" "POST" "/session/$SESSION_ID/execute/sync" '{"script":"document.getElementById(\"pointer-status\").textContent = \"Pointer: idle\"; return null;","args":[]}' 'null'
+  run_test "Pointer actions on trigger" "POST" "/session/$SESSION_ID/actions" "{\"actions\":[{\"type\":\"pointer\",\"id\":\"m2\",\"parameters\":{\"pointerType\":\"mouse\"},\"actions\":[{\"type\":\"pointerMove\",\"origin\":{\"element-6066-11e4-a52e-4f735466cecf\":\"$POINTER_TRIGGER_EID\"},\"x\":1,\"y\":1,\"duration\":0},{\"type\":\"pointerDown\",\"button\":0},{\"type\":\"pointerUp\",\"button\":0}]}]}" 'null'
+  sleep 0.3
+  run_test "Pointer status opened after actions" "GET" "/session/$SESSION_ID/element/$POINTER_STATUS_EID/text" "" '"Pointer: opened"'
+fi
 
 # Release actions
 run_test "Release actions" "DELETE" "/session/$SESSION_ID/actions" "" 'null'

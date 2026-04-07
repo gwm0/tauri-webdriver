@@ -26,6 +26,14 @@ describe('Element Operations', () => {
         expect(after).not.toBe(before);
     });
 
+    it('should dispatch pointerdown-driven interactions on click', async () => {
+        const trigger = await browser.$('#pointer-trigger');
+        const status = await browser.$('#pointer-status');
+        expect(await status.getText()).toBe('Pointer: idle');
+        await trigger.click();
+        expect(await status.getText()).toBe('Pointer: opened');
+    });
+
     it('should check displayed state', async () => {
         const visible = await browser.$('#title');
         expect(await visible.isDisplayed()).toBe(true);

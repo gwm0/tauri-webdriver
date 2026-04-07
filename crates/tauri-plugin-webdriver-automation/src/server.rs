@@ -206,6 +206,53 @@ async fn eval_on_element<R: Runtime>(
     eval_js(state, &script).await
 }
 
+fn dispatch_pointer_event_js(
+    event_name: &str,
+    target_expr: &str,
+    x_expr: &str,
+    y_expr: &str,
+    button: u8,
+    buttons: u8,
+) -> String {
+    format!(
+        r#"(function(){{var __t={target_expr};if(!__t||typeof PointerEvent==='undefined')return;
+            __t.dispatchEvent(new PointerEvent('{event_name}',{{
+                clientX:{x_expr},
+                clientY:{y_expr},
+                button:{button},
+                buttons:{buttons},
+                bubbles:true,
+                cancelable:true,
+                composed:true,
+                pointerId:1,
+                pointerType:'mouse',
+                isPrimary:true
+            }}));}})();"#,
+    )
+}
+
+fn dispatch_mouse_event_js(
+    event_name: &str,
+    target_expr: &str,
+    x_expr: &str,
+    y_expr: &str,
+    button: u8,
+    buttons: u8,
+) -> String {
+    format!(
+        r#"(function(){{var __t={target_expr};if(!__t)return;
+            __t.dispatchEvent(new MouseEvent('{event_name}',{{
+                clientX:{x_expr},
+                clientY:{y_expr},
+                button:{button},
+                buttons:{buttons},
+                bubbles:true,
+                cancelable:true,
+                composed:true
+            }}));}})();"#,
+    )
+}
+
 // --- Request body types ---
 
 #[derive(Deserialize)]
@@ -616,12 +663,39 @@ async fn element_click<R: Runtime>(
     AxumState(state): AxumState<SharedState<R>>,
     Json(body): Json<ElemReq>,
 ) -> ApiResult {
+    let click_js = format!(
+        r#"el.scrollIntoView({{block:'center',inline:'center'}});
+           var __r=el.getBoundingClientRect();
+           var __x=Math.round(__r.left + (__r.width / 2));
+           var __y=Math.round(__r.top + (__r.height / 2));
+           if(typeof el.focus==='function')el.focus();
+           {pointer_over}
+           {mouse_over}
+           {pointer_move}
+           {mouse_move}
+           {pointer_down}
+           {mouse_down}
+           {pointer_up}
+           {mouse_up}
+           if(typeof el.click==='function'){{el.click();}}else{{{mouse_click}}}
+           return null"#,
+        pointer_over = dispatch_pointer_event_js("pointerover", "el", "__x", "__y", 0, 0),
+        mouse_over = dispatch_mouse_event_js("mouseover", "el", "__x", "__y", 0, 0),
+        pointer_move = dispatch_pointer_event_js("pointermove", "el", "__x", "__y", 0, 0),
+        mouse_move = dispatch_mouse_event_js("mousemove", "el", "__x", "__y", 0, 0),
+        pointer_down = dispatch_pointer_event_js("pointerdown", "el", "__x", "__y", 0, 1),
+        mouse_down = dispatch_mouse_event_js("mousedown", "el", "__x", "__y", 0, 1),
+        pointer_up = dispatch_pointer_event_js("pointerup", "el", "__x", "__y", 0, 0),
+        mouse_up = dispatch_mouse_event_js("mouseup", "el", "__x", "__y", 0, 0),
+        mouse_click = dispatch_mouse_event_js("click", "el", "__x", "__y", 0, 0),
+    );
+
     eval_on_element(
         &state,
         &body.selector,
         body.index,
         body.using.as_deref(),
-        "el.scrollIntoView({block:'center',inline:'center'});el.focus();el.click();return null",
+        &click_js,
     )
     .await?;
     Ok(Json(json!(null)))
@@ -1366,37 +1440,67 @@ async fn actions_perform<R: Runtime>(
                         }
                     }
 
-                    // Dispatch mousemove event.
-                    js_parts.push(
-                        "(function(){var tgt=document.elementFromPoint(\
-                         window.__wdPointerX||0,window.__wdPointerY||0)||document.body;\
-                         tgt.dispatchEvent(new MouseEvent('mousemove',\
-                         {clientX:window.__wdPointerX||0,clientY:window.__wdPointerY||0,\
-                         bubbles:true,cancelable:true}))})();"
-                            .to_string(),
-                    );
+                    js_parts.push(dispatch_pointer_event_js(
+                        "pointermove",
+                        "document.elementFromPoint(window.__wdPointerX||0,window.__wdPointerY||0)||document.body",
+                        "window.__wdPointerX||0",
+                        "window.__wdPointerY||0",
+                        0,
+                        0,
+                    ));
+                    js_parts.push(dispatch_mouse_event_js(
+                        "mousemove",
+                        "document.elementFromPoint(window.__wdPointerX||0,window.__wdPointerY||0)||document.body",
+                        "window.__wdPointerX||0",
+                        "window.__wdPointerY||0",
+                        0,
+                        0,
+                    ));
                 }
                 ("pointer", "pointerDown") => {
                     let button = action.get("button").and_then(|v| v.as_u64()).unwrap_or(0);
-                    js_parts.push(format!(
-                        "(function(){{var tgt=document.elementFromPoint(\
-                         window.__wdPointerX||0,window.__wdPointerY||0)||document.body;\
-                         tgt.dispatchEvent(new MouseEvent('mousedown',\
-                         {{clientX:window.__wdPointerX||0,clientY:window.__wdPointerY||0,\
-                         button:{button},bubbles:true,cancelable:true}}))}})();"
+                    js_parts.push(dispatch_pointer_event_js(
+                        "pointerdown",
+                        "document.elementFromPoint(window.__wdPointerX||0,window.__wdPointerY||0)||document.body",
+                        "window.__wdPointerX||0",
+                        "window.__wdPointerY||0",
+                        button as u8,
+                        1,
+                    ));
+                    js_parts.push(dispatch_mouse_event_js(
+                        "mousedown",
+                        "document.elementFromPoint(window.__wdPointerX||0,window.__wdPointerY||0)||document.body",
+                        "window.__wdPointerX||0",
+                        "window.__wdPointerY||0",
+                        button as u8,
+                        1,
                     ));
                 }
                 ("pointer", "pointerUp") => {
                     let button = action.get("button").and_then(|v| v.as_u64()).unwrap_or(0);
-                    js_parts.push(format!(
-                        "(function(){{var tgt=document.elementFromPoint(\
-                         window.__wdPointerX||0,window.__wdPointerY||0)||document.body;\
-                         tgt.dispatchEvent(new MouseEvent('mouseup',\
-                         {{clientX:window.__wdPointerX||0,clientY:window.__wdPointerY||0,\
-                         button:{button},bubbles:true,cancelable:true}}));\
-                         tgt.dispatchEvent(new MouseEvent('click',\
-                         {{clientX:window.__wdPointerX||0,clientY:window.__wdPointerY||0,\
-                         button:{button},bubbles:true,cancelable:true}}))}})();"
+                    js_parts.push(dispatch_pointer_event_js(
+                        "pointerup",
+                        "document.elementFromPoint(window.__wdPointerX||0,window.__wdPointerY||0)||document.body",
+                        "window.__wdPointerX||0",
+                        "window.__wdPointerY||0",
+                        button as u8,
+                        0,
+                    ));
+                    js_parts.push(dispatch_mouse_event_js(
+                        "mouseup",
+                        "document.elementFromPoint(window.__wdPointerX||0,window.__wdPointerY||0)||document.body",
+                        "window.__wdPointerX||0",
+                        "window.__wdPointerY||0",
+                        button as u8,
+                        0,
+                    ));
+                    js_parts.push(dispatch_mouse_event_js(
+                        "click",
+                        "document.elementFromPoint(window.__wdPointerX||0,window.__wdPointerY||0)||document.body",
+                        "window.__wdPointerX||0",
+                        "window.__wdPointerY||0",
+                        button as u8,
+                        0,
                     ));
                 }
                 ("wheel", "scroll") => {

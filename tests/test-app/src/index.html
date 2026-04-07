@@ -9,6 +9,8 @@
     <h1 id="title">Test App</h1>
     <p id="counter">Count: 0</p>
     <button id="increment">Increment</button>
+    <button id="pointer-trigger">Pointer Trigger</button>
+    <p id="pointer-status">Pointer: idle</p>
     <label for="text-input">Enter text</label>
     <input id="text-input" type="text" placeholder="Type here" />
     <a id="link" href="/page2">Go to page 2</a>
@@ -40,6 +42,10 @@
       var counter = document.getElementById('counter');
       var count = parseInt(counter.textContent.split(': ')[1]) + 1;
       counter.textContent = 'Count: ' + count;
+    });
+    document.getElementById('pointer-trigger').addEventListener('pointerdown', function(event) {
+      event.preventDefault();
+      document.getElementById('pointer-status').textContent = 'Pointer: opened';
     });
     document.getElementById('file-input').addEventListener('change', function() {
       var status = document.getElementById('file-status');
